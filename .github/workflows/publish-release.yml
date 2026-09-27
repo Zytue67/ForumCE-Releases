@@ -1,0 +1,32 @@
+name: Publish ForumCE Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify release assets
+        run: |
+          test -f release/latest/forumce-release.json
+          test -f release/latest/FORUMCE.8xp
+          test -f release/latest/FORUMCE.8xp.0.8xv
+          test -f release/latest/FORUMCE.8xp.1.8xv
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            release/latest/* \
+            --title "ForumCE ${GITHUB_REF_NAME}" \
+            --generate-notes

@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "product": "ForumCE",
+  "calculator_version": "1.0.0",
+  "connect_version": "1.0.0",
+  "minimum_connect_version": "1.0.0",
+  "notes": "ForumCE v1.0.0 official release",
+  "calculator_files": [
+    {
+      "name": "FORUMCE.8xp",
+      "sha256": "1d0418d254f5ea46016a464b1365391d3c9371056b80371abcdb23bf0a159d20",
+      "size": 588
+    },
+    {
+      "name": "FORUMCE.8xp.0.8xv",
+      "sha256": "72cca2ae92e1c391822f44a524b2dc7def95ce11942c0d805f2a9d2c3883a141",
+      "size": 65308
+    },
+    {
+      "name": "FORUMCE.8xp.1.8xv",
+      "sha256": "6a870a94bbbc9d05f110559bcee6803c59a31f35065cbbc8aa6a48b4665acdba",
+      "size": 3066
+    }
+  ]
+}
