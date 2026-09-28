@@ -96,7 +96,7 @@ jobs:
       - name: Build Apple Silicon DMG
         shell: bash
         working-directory: connect-src/ForumCE-Connect-v1.1-CrossPlatform
-        run: ./build_release.sh
+        run: bash ./build_release.sh
 
       - name: Upload Apple Silicon build
         uses: actions/upload-artifact@v4
@@ -137,7 +137,7 @@ jobs:
       - name: Build Intel DMG
         shell: bash
         working-directory: connect-src/ForumCE-Connect-v1.1-CrossPlatform
-        run: ./build_release.sh
+        run: bash ./build_release.sh
 
       - name: Upload Intel build
         uses: actions/upload-artifact@v4
