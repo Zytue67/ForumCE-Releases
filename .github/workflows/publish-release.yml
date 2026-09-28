@@ -2,31 +2,227 @@ name: Publish ForumCE Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+    paths:
+      - 'release/READY_v1.1.0'
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+env:
+  RELEASE_VERSION: v1.1.0
+  SOURCE_REPO: Zytue67/ForumCE
+  SOURCE_REF: windows-support-v1.1
+  SOURCE_SHA256: 7c26d3b9b38ba907bfafc9fd2fb6cea3c3c657a81f8a46c6a8ad05a8a66c40c6
+
 jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out ForumCE Connect source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ env.SOURCE_REF }}
+          path: forumce-source
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: 'x64'
+
+      - name: Reconstruct source archive
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem "forumce-source\.windows-build\source.part*.b64" | Sort-Object Name
+          $b64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ""
+          $b64 = $b64 -replace '[^A-Za-z0-9+/=]', ''
+          [IO.File]::WriteAllBytes("ForumCE-Connect-source.zip", [Convert]::FromBase64String($b64))
+          $hash = (Get-FileHash "ForumCE-Connect-source.zip" -Algorithm SHA256).Hash.ToLower()
+          Write-Host "Source SHA256: $hash"
+          if ($hash -ne "${{ env.SOURCE_SHA256 }}") { throw "Source archive hash mismatch." }
+          Expand-Archive -Path "ForumCE-Connect-source.zip" -DestinationPath "connect-src"
+
+      - name: Syntax checks
+        shell: pwsh
+        working-directory: connect-src/ForumCE-Connect-v1.1-CrossPlatform
+        run: |
+          python -m py_compile app.py bridge_runtime.py device_utils.py
+
+      - name: Build Windows executable
+        shell: pwsh
+        working-directory: connect-src/ForumCE-Connect-v1.1-CrossPlatform
+        run: .\build_windows.ps1
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: forumce-windows
+          path: connect-src/ForumCE-Connect-v1.1-CrossPlatform/dist/ForumCE-Connect-v1.1.0-Windows-x64.exe
+          if-no-files-found: error
+
+  build-macos-apple-silicon:
+    runs-on: macos-15
+    steps:
+      - name: Check out ForumCE Connect source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ env.SOURCE_REF }}
+          path: forumce-source
+
+      - name: Reconstruct source archive
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, hashlib
+          parts = sorted(Path('forumce-source/.windows-build').glob('source.part*.b64'))
+          raw = ''.join(p.read_text() for p in parts)
+          data = base64.b64decode(''.join(raw.split()))
+          digest = hashlib.sha256(data).hexdigest()
+          print('Source SHA256:', digest)
+          expected = '${{ env.SOURCE_SHA256 }}'
+          if digest != expected:
+              raise SystemExit('Source archive hash mismatch')
+          Path('ForumCE-Connect-source.zip').write_bytes(data)
+          PY
+          mkdir -p connect-src
+          unzip -q ForumCE-Connect-source.zip -d connect-src
+
+      - name: Build Apple Silicon DMG
+        shell: bash
+        working-directory: connect-src/ForumCE-Connect-v1.1-CrossPlatform
+        run: ./build_release.sh
+
+      - name: Upload Apple Silicon build
+        uses: actions/upload-artifact@v4
+        with:
+          name: forumce-macos-apple-silicon
+          path: connect-src/ForumCE-Connect-v1.1-CrossPlatform/dist/ForumCE-Connect-v1.1-macOS-Apple-Silicon.dmg
+          if-no-files-found: error
+
+  build-macos-intel:
+    runs-on: macos-15-intel
+    steps:
+      - name: Check out ForumCE Connect source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ env.SOURCE_REF }}
+          path: forumce-source
+
+      - name: Reconstruct source archive
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, hashlib
+          parts = sorted(Path('forumce-source/.windows-build').glob('source.part*.b64'))
+          raw = ''.join(p.read_text() for p in parts)
+          data = base64.b64decode(''.join(raw.split()))
+          digest = hashlib.sha256(data).hexdigest()
+          print('Source SHA256:', digest)
+          expected = '${{ env.SOURCE_SHA256 }}'
+          if digest != expected:
+              raise SystemExit('Source archive hash mismatch')
+          Path('ForumCE-Connect-source.zip').write_bytes(data)
+          PY
+          mkdir -p connect-src
+          unzip -q ForumCE-Connect-source.zip -d connect-src
+
+      - name: Build Intel DMG
+        shell: bash
+        working-directory: connect-src/ForumCE-Connect-v1.1-CrossPlatform
+        run: ./build_release.sh
+
+      - name: Upload Intel build
+        uses: actions/upload-artifact@v4
+        with:
+          name: forumce-macos-intel
+          path: connect-src/ForumCE-Connect-v1.1-CrossPlatform/dist/ForumCE-Connect-v1.1-macOS-Intel.dmg
+          if-no-files-found: error
+
   publish:
+    needs:
+      - build-windows
+      - build-macos-apple-silicon
+      - build-macos-intel
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Check out release repository
         uses: actions/checkout@v4
 
-      - name: Verify release assets
+      - name: Download desktop builds
+        uses: actions/download-artifact@v4
+        with:
+          path: built
+          merge-multiple: true
+
+      - name: Add macOS manual bridge
+        shell: bash
         run: |
+          curl -fL \
+            -o built/ForumCE-Bridge-macOS-v1.0.zip \
+            https://github.com/Zytue67/ForumCE-Releases/releases/download/v1.0.0/ForumCE-Bridge-macOS-v1.0.zip
+
+      - name: Verify release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f built/ForumCE-Connect-v1.1.0-Windows-x64.exe
+          test -f built/ForumCE-Connect-v1.1-macOS-Apple-Silicon.dmg
+          test -f built/ForumCE-Connect-v1.1-macOS-Intel.dmg
+          test -f built/ForumCE-Bridge-macOS-v1.0.zip
           test -f release/latest/forumce-release.json
           test -f release/latest/FORUMCE.8xp
           test -f release/latest/FORUMCE.8xp.0.8xv
           test -f release/latest/FORUMCE.8xp.1.8xv
+          echo "Desktop build hashes:"
+          sha256sum built/*
+          echo "Calculator hashes:"
+          sha256sum release/latest/FORUMCE.8xp release/latest/FORUMCE.8xp.0.8xv release/latest/FORUMCE.8xp.1.8xv
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          manifest = json.loads(Path('release/latest/forumce-release.json').read_text())
+          for item in manifest['calculator_files']:
+              p = Path('release/latest') / item['name']
+              data = p.read_bytes()
+              assert len(data) == item['size'], (p, len(data), item['size'])
+              actual = hashlib.sha256(data).hexdigest()
+              assert actual == item['sha256'], (p, actual, item['sha256'])
+          print('Manifest verification passed.')
+          PY
 
-      - name: Publish GitHub Release
+      - name: Publish ForumCE v1.1.0
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            release/latest/* \
-            --title "ForumCE ${GITHUB_REF_NAME}" \
-            --generate-notes
+          set -euo pipefail
+          assets=(
+            built/ForumCE-Connect-v1.1.0-Windows-x64.exe
+            built/ForumCE-Connect-v1.1-macOS-Apple-Silicon.dmg
+            built/ForumCE-Connect-v1.1-macOS-Intel.dmg
+            built/ForumCE-Bridge-macOS-v1.0.zip
+            release/latest/forumce-release.json
+            release/latest/FORUMCE.8xp
+            release/latest/FORUMCE.8xp.0.8xv
+            release/latest/FORUMCE.8xp.1.8xv
+          )
+
+          if gh release view "$RELEASE_VERSION" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_VERSION" "${assets[@]}" --clobber
+            gh release edit "$RELEASE_VERSION" \
+              --title "ForumCE v1.1.0" \
+              --notes-file release/v1.1.0-notes.md
+          else
+            gh release create "$RELEASE_VERSION" "${assets[@]}" \
+              --target main \
+              --title "ForumCE v1.1.0" \
+              --notes-file release/v1.1.0-notes.md
+          fi
